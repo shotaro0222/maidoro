@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home, Lock, KeyRound, User } from 'lucide-react'
-import { createClient } from '../../lib/supabase/client'
+import { createClient } from '../lib/supabase/client'
 import Link from 'next/link'
 
 // データの型定義
