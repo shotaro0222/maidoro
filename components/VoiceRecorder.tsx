@@ -3,6 +3,7 @@
 
 import { useState, useRef } from 'react'
 import { Mic, Square, Loader2, Send, CheckCircle2, RotateCcw, Briefcase, AlertTriangle, Home, Lightbulb, ClipboardList } from 'lucide-react'
+import { createClient } from '../lib/supabase/client' // ← ★これを追加！
 
 type Step = 'idle' | 'recording' | 'processing' | 'editing' | 'submitted'
 type ReportType = 'report' | 'crm' | 'incident' | 'inspection' | 'braindump'
@@ -80,9 +81,29 @@ export default function VoiceRecorder() {
     }
   }
 
-  const handleSubmit = async () => {
-    console.log(`[${reportType}] 送信するデータ:`, reportText)
-    setStep('submitted')
+ const handleSubmit = async () => {
+    try {
+      const supabase = createClient()
+      
+      // Supabaseの reports テーブルにデータを保存
+      const { error } = await supabase
+        .from('reports')
+        .insert([
+          { 
+            type: reportType, 
+            content: reportText 
+          }
+        ])
+
+      if (error) throw error
+
+      console.log(`[${reportType}] 保存完了!`)
+      setStep('submitted')
+      
+    } catch (error) {
+      console.error('保存エラー:', error)
+      alert('データの保存に失敗しました。')
+    }
   }
 
   const resetForm = () => {
