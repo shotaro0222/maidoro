@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Mic, Square, Loader2, Send, CheckCircle2, RotateCcw, ArrowRight, SkipForward, FileAudio, Settings, AlignLeft } from 'lucide-react'
-import { createClient } from '../lib/supabase/client'
+import { createClient } from './lib/supabase/client'
 import Link from 'next/link'
 
 type Step = 'idle' | 'recording' | 'processing' | 'editing' | 'submitted'
@@ -59,19 +59,15 @@ export default function Home() {
     }
   }
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && step === 'recording') {
-      mediaRecorderRef.current.stop()
-      setStep('processing')
-    }
-  }
-
   const processAudio = async (audioBlob: Blob) => {
     setStep('processing')
     try {
       const formData = new FormData()
       formData.append('audio', audioBlob)
-      formData.append('type', 'braindump')
+      
+      // ★ 追加：AIに「今の項目名」を教える
+      const currentFieldName = fields.length > 0 ? fields[currentFieldIdx].name : '自由入力'
+      formData.append('fieldName', currentFieldName)
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
