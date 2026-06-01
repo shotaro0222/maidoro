@@ -1,5 +1,5 @@
 // app/page.tsx
-import VoiceRecorder from '@/components/VoiceRecorder'
+import VoiceRecorder from "../components/VoiceRecorder"
 
 export default function Home() {
   return (
