@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Mic, Square, Loader2, Send, CheckCircle2, RotateCcw, ArrowRight, SkipForward } from 'lucide-react'
-import { createClient } from './lib/supabase/client' // ※環境に合わせてパスを調整（'../lib/supabase/client' の場合もあります）
+import { createClient } from '../lib/supabase/client'
 
 type Step = 'idle' | 'recording' | 'processing' | 'editing' | 'submitted'
 type Field = { id: string; name: string }
