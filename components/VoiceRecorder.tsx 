@@ -1,0 +1,231 @@
+// components/VoiceRecorder.tsx
+'use client'
+
+import { useState, useRef } from 'react'
+import { Mic, Square, Loader2, Send, CheckCircle2, RotateCcw, Briefcase, AlertTriangle, Home, Lightbulb, ClipboardList } from 'lucide-react'
+
+type Step = 'idle' | 'recording' | 'processing' | 'editing' | 'submitted'
+type ReportType = 'report' | 'crm' | 'incident' | 'inspection' | 'braindump'
+
+const MODES = [
+  { id: 'report', label: '業務日報', icon: ClipboardList, color: 'text-indigo-400' },
+  { id: 'crm', label: '商談メモ', icon: Briefcase, color: 'text-blue-400' },
+  { id: 'incident', label: 'ヒヤリハット', icon: AlertTriangle, color: 'text-rose-400' },
+  { id: 'inspection', label: '現調記録', icon: Home, color: 'text-emerald-400' },
+  { id: 'braindump', label: 'アイデア帳', icon: Lightbulb, color: 'text-amber-400' },
+] as const;
+
+export default function VoiceRecorder() {
+  const [step, setStep] = useState<Step>('idle')
+  const [reportType, setReportType] = useState<ReportType>('report')
+  const [reportText, setReportText] = useState<string>('')
+  
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<BlobPart[]>([])
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data)
+      }
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        await processAudio(audioBlob)
+        stream.getTracks().forEach(track => track.stop())
+      }
+
+      mediaRecorder.start()
+      setStep('recording')
+      setReportText('')
+    } catch (error) {
+      console.error('マイクへのアクセスに失敗しました:', error)
+      alert('マイクへのアクセスを許可してください。')
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && step === 'recording') {
+      mediaRecorderRef.current.stop()
+      setStep('processing')
+    }
+  }
+
+  const processAudio = async (audioBlob: Blob) => {
+    try {
+      const formData = new FormData()
+      formData.append('audio', audioBlob, 'record.webm')
+      formData.append('type', reportType) // 💡 選択されたモードを送信
+
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) throw new Error('APIエラーが発生しました')
+
+      const data = await response.json()
+      setReportText(data.report)
+      setStep('editing')
+      
+    } catch (error) {
+      console.error('処理エラー:', error)
+      alert('生成中にエラーが発生しました。')
+      setStep('idle')
+    }
+  }
+
+  const handleSubmit = async () => {
+    console.log(`[${reportType}] 送信するデータ:`, reportText)
+    setStep('submitted')
+  }
+
+  const resetForm = () => {
+    setReportText('')
+    setStep('idle')
+  }
+
+  // 現在選択中のモードの情報を取得
+  const currentMode = MODES.find(m => m.id === reportType) || MODES[0]
+
+  return (
+    <div className="w-full max-w-md mx-auto p-6 bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl">
+      
+      {/* モード選択（待機中のみ表示） */}
+      {step === 'idle' && (
+        <div className="mb-8 overflow-x-auto pb-2 scrollbar-hide">
+          <div className="flex gap-2 min-w-max">
+            {MODES.map((mode) => {
+              const Icon = mode.icon
+              const isActive = reportType === mode.id
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setReportType(mode.id as ReportType)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    isActive 
+                      ? `bg-slate-800 ${mode.color} border-slate-700 shadow-inner` 
+                      : 'bg-slate-950 text-slate-500 border-slate-800/50 hover:bg-slate-900'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {mode.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 待機・録音・処理中 モード */}
+      {(step === 'idle' || step === 'recording' || step === 'processing') && (
+        <div className="flex flex-col items-center py-6">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-bold text-slate-100 flex items-center justify-center gap-2">
+              <currentMode.icon className={`w-6 h-6 ${currentMode.color}`} />
+              AI {currentMode.label}
+            </h2>
+            <p className="text-sm text-slate-400 mt-2">話しかけるだけで、フォーマット通りに整理します</p>
+          </div>
+
+          <div className="flex justify-center mb-8 relative">
+            {step === 'idle' && (
+              <button
+                onClick={startRecording}
+                className="w-36 h-36 rounded-full bg-indigo-600 flex items-center justify-center hover:bg-indigo-500 transition-all shadow-[0_0_40px_rgba(79,70,229,0.4)] group active:scale-95"
+              >
+                <Mic className="w-14 h-14 text-white group-hover:scale-110 transition-transform" />
+              </button>
+            )}
+
+            {step === 'recording' && (
+              <button
+                onClick={stopRecording}
+                className="w-36 h-36 rounded-full bg-red-500 flex items-center justify-center hover:bg-red-400 transition-all shadow-[0_0_40px_rgba(239,68,68,0.5)] animate-pulse"
+              >
+                <Square className="w-12 h-12 text-white fill-current" />
+              </button>
+            )}
+
+            {step === 'processing' && (
+              <div className="w-36 h-36 rounded-full bg-slate-800 border-2 border-indigo-500 flex items-center justify-center shadow-[0_0_30px_rgba(79,70,229,0.2)]">
+                <Loader2 className="w-12 h-12 text-indigo-400 animate-spin" />
+              </div>
+            )}
+          </div>
+
+          <div className="text-center h-8">
+            {step === 'idle' && <p className="text-slate-500 font-bold text-sm">マイクをタップして録音開始</p>}
+            {step === 'recording' && <p className="text-red-400 font-bold text-sm animate-pulse">録音中... (タップで停止)</p>}
+            {step === 'processing' && <p className="text-indigo-400 font-bold text-sm">AIがテキストを構成中...</p>}
+          </div>
+        </div>
+      )}
+
+      {/* 編集・確認 モード */}
+      {step === 'editing' && (
+        <div className="flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-200 flex items-center gap-1.5">
+              <currentMode.icon className={`w-4 h-4 ${currentMode.color}`} />
+              内容の確認・修正
+            </h3>
+            <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-1 rounded font-bold">AI生成完了</span>
+          </div>
+          
+          <textarea
+            value={reportText}
+            onChange={(e) => setReportText(e.target.value)}
+            className="w-full h-64 bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition shadow-inner resize-none leading-relaxed"
+          />
+          
+          <p className="text-[10px] text-slate-500 mt-2 mb-6 text-center">
+            ※誤字や固有名詞の変換ミスがあれば、直接タップして修正できます。
+          </p>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setStep('idle')}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"
+            >
+              録音し直す
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="flex-[2] bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl text-sm font-bold transition shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95"
+            >
+              <Send className="w-4 h-4" />
+              データを送信する
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 送信完了 モード */}
+      {step === 'submitted' && (
+        <div className="flex flex-col items-center py-12 animate-in zoom-in duration-300">
+          <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mb-6 border border-emerald-500/30">
+            <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">送信完了！</h3>
+          <p className="text-sm text-slate-400 mb-10 text-center">
+            {currentMode.label}のデータが保存されました。<br/>お疲れ様でした。
+          </p>
+          
+          <button
+            onClick={resetForm}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-3 rounded-xl text-sm font-bold transition flex items-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            続けて入力する
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
