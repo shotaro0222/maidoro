@@ -3,7 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Mic, Square, Loader2, Send, CheckCircle2, RotateCcw, ArrowRight, SkipForward, FileAudio, Settings, AlignLeft } from 'lucide-react'
-import { createClient } from './lib/supabase/client'
+import { createClient } from '../lib/supabase/client'
 import Link from 'next/link'
 
 type Step = 'idle' | 'recording' | 'processing' | 'editing' | 'submitted'
@@ -65,7 +65,6 @@ export default function Home() {
       const formData = new FormData()
       formData.append('audio', audioBlob)
       
-      // ★ 追加：AIに「今の項目名」を教える
       const currentFieldName = fields.length > 0 ? fields[currentFieldIdx].name : '自由入力'
       formData.append('fieldName', currentFieldName)
 
@@ -166,7 +165,7 @@ export default function Home() {
       <main className="flex-1 max-w-2xl w-full mx-auto p-4 md:p-8 flex flex-col justify-center">
         
         {/* タイトルエリア */}
-        <div className="mb-8 text-center md:text-left">
+        <div className="mb-6 text-center md:text-left">
           <h1 className="text-2xl md:text-3xl font-extrabold text-white mb-3 flex items-center justify-center md:justify-start gap-3">
             <FileAudio className="w-7 h-7 text-indigo-400" />
             AI 音声レポート入力
@@ -193,17 +192,33 @@ export default function Home() {
             {(step === 'idle' || step === 'recording' || step === 'processing') && (
               <div className="flex flex-col items-center">
                 
+                {/* ★ 追加：全ステップのロードマップ表示 ★ */}
+                {fields.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-2 mb-8 w-full">
+                    {fields.map((field, idx) => (
+                      <div key={field.id} className="flex items-center gap-2">
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                          idx === currentFieldIdx 
+                            ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 shadow-[0_0_15px_rgba(79,70,229,0.3)]' // 現在のステップ
+                            : idx < currentFieldIdx 
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' // 完了したステップ
+                              : 'bg-slate-800/50 border-slate-700/50 text-slate-500' // まだのステップ
+                        }`}>
+                          {idx < currentFieldIdx ? <CheckCircle2 className="w-3 h-3 inline mr-1" /> : null}
+                          {field.name}
+                        </span>
+                        {idx < fields.length - 1 && (
+                          <ArrowRight className="w-3 h-3 text-slate-700" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* 現在の項目表示 */}
                 <div className="text-center mb-10 w-full">
-                  {fields.length > 0 && (
-                    <div className="flex items-center justify-center gap-2 mb-4">
-                      <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-bold text-xs tracking-widest uppercase px-3 py-1 rounded-full">
-                        Step {currentFieldIdx + 1} / {fields.length}
-                      </span>
-                    </div>
-                  )}
                   <h2 className="text-2xl md:text-3xl font-bold text-white leading-relaxed">
-                    「<span className="text-indigo-300">{currentFieldName}</span>」<br />
+                    「<span className="text-indigo-300 border-b-2 border-indigo-500/30 pb-1">{currentFieldName}</span>」<br />
                     について
                   </h2>
                 </div>
