@@ -73,6 +73,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('AI解析エラー:', error);
-    return NextResponse.json({ error: 'レポートの生成に失敗しました' }, { status: 500 });
+    return NextResponse.json({ error: 'レポートの生成に失敗しました ' }, { status: 500 });
   }
 }
