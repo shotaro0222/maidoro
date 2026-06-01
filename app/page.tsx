@@ -59,6 +59,14 @@ export default function Home() {
     }
   }
 
+  // ↓ 今回エラーになっていた「停止機能」です
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && step === 'recording') {
+      mediaRecorderRef.current.stop()
+      setStep('processing')
+    }
+  }
+
   const processAudio = async (audioBlob: Blob) => {
     setStep('processing')
     try {
@@ -192,17 +200,17 @@ export default function Home() {
             {(step === 'idle' || step === 'recording' || step === 'processing') && (
               <div className="flex flex-col items-center">
                 
-                {/* ★ 追加：全ステップのロードマップ表示 ★ */}
+                {/* 全ステップのロードマップ表示 */}
                 {fields.length > 0 && (
                   <div className="flex flex-wrap items-center justify-center gap-2 mb-8 w-full">
                     {fields.map((field, idx) => (
                       <div key={field.id} className="flex items-center gap-2">
                         <span className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
                           idx === currentFieldIdx 
-                            ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 shadow-[0_0_15px_rgba(79,70,229,0.3)]' // 現在のステップ
+                            ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 shadow-[0_0_15px_rgba(79,70,229,0.3)]' 
                             : idx < currentFieldIdx 
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' // 完了したステップ
-                              : 'bg-slate-800/50 border-slate-700/50 text-slate-500' // まだのステップ
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                              : 'bg-slate-800/50 border-slate-700/50 text-slate-500' 
                         }`}>
                           {idx < currentFieldIdx ? <CheckCircle2 className="w-3 h-3 inline mr-1" /> : null}
                           {field.name}
