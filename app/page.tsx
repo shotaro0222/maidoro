@@ -1,311 +1,327 @@
-// app/page.tsx
+// app/admin/page.tsx
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Mic, Square, Loader2, Send, CheckCircle2, RotateCcw, ArrowRight, SkipForward, FileAudio, Settings, AlignLeft } from 'lucide-react'
-import { createClient } from '../lib/supabase/client'
+import { useState, useEffect } from 'react'
+import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home, Lock, KeyRound, User } from 'lucide-react'
+import { createClient } from '../../lib/supabase/client'
 import Link from 'next/link'
 
-type Step = 'idle' | 'recording' | 'processing' | 'editing' | 'submitted'
-type Field = { id: string; name: string }
+// データの型定義
+type Report = {
+  id: string;
+  author: string;
+  role: string;
+  date: string;
+  status: 'pending' | 'approved' | 'rejected';
+  summary: string;
+  fullText: string;
+  feedback: string;
+}
 
-export default function Home() {
-  const [step, setStep] = useState<Step>('idle')
-  
+type Field = {
+  id: string;
+  name: string;
+}
+
+export default function TenantAdminDashboard() {
+  // ▼ 認証用のState（ログインIDと、通信中のローディング状態を追加）
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loginId, setLoginId] = useState('')
+  const [passwordInput, setPasswordInput] = useState('')
+  const [loginError, setLoginError] = useState(false)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
+
+  const [activeTab, setActiveTab] = useState<'reports' | 'settings'>('reports')
+  const [reports, setReports] = useState<Report[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingFeedback, setEditingFeedback] = useState<{ [key: string]: string }>({})
   const [fields, setFields] = useState<Field[]>([])
-  const [currentFieldIdx, setCurrentFieldIdx] = useState(0)
-  const [fieldTexts, setFieldTexts] = useState<{ [key: string]: string }>({})
-  const [isLoadingFields, setIsLoadingFields] = useState(true)
-  
-  const [reportText, setReportText] = useState<string>('')
-  
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<BlobPart[]>([])
+  const [newFieldName, setNewFieldName] = useState('')
+  const [isAddingField, setIsAddingField] = useState(false)
 
   useEffect(() => {
-    const fetchFields = async () => {
+    if (!isAuthenticated) return;
+
+    const fetchData = async () => {
       const supabase = createClient()
-      const { data } = await supabase.from('report_fields').select('*').order('created_at', { ascending: true })
-      if (data && data.length > 0) {
-        setFields(data)
-      }
-      setIsLoadingFields(false)
-    }
-    fetchFields()
-  }, [])
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data)
-      }
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        await processAudio(audioBlob)
-        stream.getTracks().forEach(track => track.stop())
-      }
-
-      mediaRecorder.start()
-      setStep('recording')
-    } catch (error) {
-      console.error('マイクアクセス失敗:', error)
-      alert('マイクへのアクセスを許可してください。')
-    }
-  }
-
-  // ↓ 今回エラーになっていた「停止機能」です
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && step === 'recording') {
-      mediaRecorderRef.current.stop()
-      setStep('processing')
-    }
-  }
-
-  const processAudio = async (audioBlob: Blob) => {
-    setStep('processing')
-    try {
-      const formData = new FormData()
-      formData.append('audio', audioBlob)
       
-      const currentFieldName = fields.length > 0 ? fields[currentFieldIdx].name : '自由入力'
-      formData.append('fieldName', currentFieldName)
-
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData
-      })
-      
-      const data = await response.json()
-      const transcribedText = data.report || '内容を読み取れませんでした。'
-
-      handleNextStep(transcribedText)
-    } catch (error) {
-      console.error(error)
-      alert('AIの解析に失敗しました。')
-      setStep('idle')
-    }
-  }
-
-  const handleSkip = () => {
-    handleNextStep('特になし')
-  }
-
-  const handleNextStep = (text: string) => {
-    if (fields.length > 0) {
-      const currentField = fields[currentFieldIdx]
-      const updatedTexts = { ...fieldTexts, [currentField.name]: text.trim() }
-      setFieldTexts(updatedTexts)
-
-      if (currentFieldIdx < fields.length - 1) {
-        setCurrentFieldIdx(currentFieldIdx + 1)
-        setStep('idle')
-      } else {
-        const combined = fields.map(f => `■ ${f.name}\n${updatedTexts[f.name] || text.trim()}`).join('\n\n')
-        setReportText(combined)
-        setStep('editing')
-      }
-    } else {
-      setReportText(text)
-      setStep('editing')
-    }
-  }
-
-  const handleSubmit = async () => {
-    try {
-      const supabase = createClient()
-      const { error } = await supabase
+      const { data: reportsData } = await supabase
         .from('reports')
-        .insert([{ type: fields.length > 0 ? 'カスタム日報' : '自由入力', content: reportText }])
+        .select('*')
+        .order('created_at', { ascending: false })
 
-      if (error) throw error
-      setStep('submitted')
-    } catch (error) {
-      console.error('保存エラー:', error)
-      alert('データの保存に失敗しました。')
+      if (reportsData) {
+        const formattedData: Report[] = reportsData.map((row: any) => ({
+          id: row.id,
+          author: 'ゲストユーザー',
+          role: getRoleName(row.type),
+          date: new Date(row.created_at).toLocaleString('ja-JP', {
+            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+          }),
+          status: 'pending',
+          summary: generateSummary(row.content),
+          fullText: row.content,
+          feedback: ''
+        }))
+        setReports(formattedData)
+      }
+
+      const { data: fieldsData } = await supabase
+        .from('report_fields')
+        .select('*')
+        .order('created_at', { ascending: true })
+        
+      if (fieldsData) {
+        setFields(fieldsData)
+      }
+
+      setLoading(false)
     }
+
+    fetchData()
+  }, [isAuthenticated])
+
+  const getRoleName = (type: string) => {
+    const types: { [key: string]: string } = { report: '業務日報', crm: '商談メモ', incident: 'ヒヤリハット', inspection: '現調記録', braindump: 'アイデア' }
+    return types[type] || type
   }
 
-  const resetAll = () => {
-    setStep('idle')
-    setCurrentFieldIdx(0)
-    setFieldTexts({})
-    setReportText('')
+  const generateSummary = (text: string) => {
+    const firstLine = text.split('\n').find(line => line.trim().length > 0) || '内容なし'
+    return firstLine.substring(0, 30) + (firstLine.length > 30 ? '...' : '')
   }
 
-  if (isLoadingFields) {
+  const handleApprove = (id: string) => setReports(reports.map(r => r.id === id ? { ...r, status: 'approved', feedback: editingFeedback[id] || r.feedback } : r))
+  const handleReject = (id: string) => setReports(reports.map(r => r.id === id ? { ...r, status: 'rejected', feedback: editingFeedback[id] || r.feedback } : r))
+  const handleFeedbackChange = (id: string, text: string) => setEditingFeedback({ ...editingFeedback, [id]: text })
+
+  const handleAddField = async () => {
+    if (!newFieldName.trim()) return
+    setIsAddingField(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.from('report_fields').insert([{ name: newFieldName.trim() }]).select().single()
+    if (!error && data) {
+      setFields([...fields, data])
+      setNewFieldName('')
+    }
+    setIsAddingField(false)
+  }
+
+  const handleDeleteField = async (id: string) => {
+    if (!confirm('この項目を削除しますか？')) return
+    const supabase = createClient()
+    const { error } = await supabase.from('report_fields').delete().eq('id', id)
+    if (!error) setFields(fields.filter(f => f.id !== id))
+  }
+
+  // ▼ 本物のデータベースと通信してログイン照合する処理
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!loginId || !passwordInput) return
+    
+    setIsAuthenticating(true)
+    setLoginError(false)
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('login_id', loginId)
+      .eq('password', passwordInput)
+      .eq('role', 'admin') // admin権限かどうかもチェック
+      .single()
+
+    if (data && !error) {
+      setIsAuthenticated(true)
+      setLoginError(false)
+    } else {
+      setLoginError(true)
+      setPasswordInput('') // パスワードだけリセット
+    }
+    
+    setIsAuthenticating(false)
+  }
+
+  if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-indigo-400">
-        <Loader2 className="w-8 h-8 animate-spin mb-4" />
-        <p className="font-bold text-sm">システムを準備中...</p>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-indigo-500/30">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center border border-indigo-500/20">
+              <Lock className="w-8 h-8 text-indigo-400" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-white text-center mb-2">管理者ログイン</h1>
+          <p className="text-slate-400 text-sm text-center mb-8 leading-relaxed">
+            設定やデータを確認するには<br/>発行されたIDとパスワードを入力してください。
+          </p>
+          
+          {/* ▼ ログインフォーム（IDとパスワード） */}
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="text"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  placeholder="ログインID"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  autoFocus
+                  disabled={isAuthenticating}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="relative">
+                <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="パスワード"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  disabled={isAuthenticating}
+                />
+              </div>
+              {loginError && <p className="text-rose-400 text-xs mt-2 font-bold ml-1">IDまたはパスワードが間違っています。</p>}
+            </div>
+            <button 
+              type="submit" 
+              disabled={isAuthenticating || !loginId || !passwordInput}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 mt-2"
+            >
+              {isAuthenticating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'ログインする'}
+            </button>
+          </form>
+
+          <div className="mt-8 pt-6 border-t border-slate-800 text-center">
+            <Link href="/" className="text-slate-500 hover:text-indigo-400 text-sm transition font-bold flex items-center justify-center gap-2">
+              <Home className="w-4 h-4" /> 録音画面に戻る
+            </Link>
+          </div>
+        </div>
       </div>
     )
   }
 
-  const currentFieldName = fields.length > 0 ? fields[currentFieldIdx].name : '自由入力'
-  const progressPercent = fields.length > 0 ? (currentFieldIdx / fields.length) * 100 : 0
-
+  // 以下、ログイン成功後のAdmin画面
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 flex flex-col">
-      
-      {/* ヘッダー */}
-      <header className="border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Mic className="w-4 h-4 text-white" />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
+      <aside className="w-full md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
+        <div className="p-4">
+          <div className="flex items-center gap-3 mb-8 px-2 mt-2">
+            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
+              <Mic className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold tracking-tight text-white">Voice-to-Report</span>
+            <div>
+              <span className="font-bold tracking-tight block leading-tight">Voice-to-Report</span>
+              <span className="text-[10px] text-slate-400">Manager Console</span>
+            </div>
           </div>
-          <Link href="/admin" className="text-xs font-bold text-slate-400 hover:text-white transition flex items-center gap-1.5 bg-slate-800/50 hover:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700/50">
-            <Settings className="w-3.5 h-3.5" />
-            管理画面
+          <nav className="space-y-1.5">
+            <button onClick={() => setActiveTab('reports')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition ${activeTab === 'reports' ? 'bg-slate-800 text-indigo-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>
+              <CheckCircle2 className="w-4 h-4" /> 日報確認・承認
+            </button>
+            <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition ${activeTab === 'settings' ? 'bg-slate-800 text-indigo-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>
+              <Settings className="w-4 h-4" /> 入力項目設定
+            </button>
+          </nav>
+        </div>
+        <div className="mt-auto p-4 border-t border-slate-800 space-y-2">
+          <Link href="/" className="w-full flex items-center gap-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-800/50 px-4 py-3 rounded-xl text-sm transition font-bold">
+            <Home className="w-4 h-4" /> 録音画面に戻る
           </Link>
+          <button onClick={() => {setIsAuthenticated(false); setLoginId(''); setPasswordInput('');}} className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold">
+            <LogOut className="w-4 h-4" /> ログアウト
+          </button>
         </div>
-      </header>
+      </aside>
 
-      {/* メインコンテンツ */}
-      <main className="flex-1 max-w-2xl w-full mx-auto p-4 md:p-8 flex flex-col justify-center">
-        
-        {/* タイトルエリア */}
-        <div className="mb-6 text-center md:text-left">
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white mb-3 flex items-center justify-center md:justify-start gap-3">
-            <FileAudio className="w-7 h-7 text-indigo-400" />
-            AI 音声レポート入力
-          </h1>
-          <p className="text-slate-400 text-sm leading-relaxed">
-            マイクに向かって話すだけで、AIが自動でフォーマット通りにテキストを整理し、システムへ保存します。
-          </p>
-        </div>
-
-        {/* 録音カード */}
-        <div className="bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden">
-          
-          {/* 進捗バー */}
-          {fields.length > 1 && step !== 'editing' && step !== 'submitted' && (
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-800">
-              <div 
-                className="h-full bg-indigo-500 transition-all duration-500 ease-out"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          )}
-
-          <div className="p-8 md:p-10">
-            {(step === 'idle' || step === 'recording' || step === 'processing') && (
-              <div className="flex flex-col items-center">
-                
-                {/* 全ステップのロードマップ表示 */}
-                {fields.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-center gap-2 mb-8 w-full">
-                    {fields.map((field, idx) => (
-                      <div key={field.id} className="flex items-center gap-2">
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                          idx === currentFieldIdx 
-                            ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300 shadow-[0_0_15px_rgba(79,70,229,0.3)]' 
-                            : idx < currentFieldIdx 
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                              : 'bg-slate-800/50 border-slate-700/50 text-slate-500' 
-                        }`}>
-                          {idx < currentFieldIdx ? <CheckCircle2 className="w-3 h-3 inline mr-1" /> : null}
-                          {field.name}
-                        </span>
-                        {idx < fields.length - 1 && (
-                          <ArrowRight className="w-3 h-3 text-slate-700" />
+      <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+        {activeTab === 'reports' && (
+          <>
+            <header className="mb-8 border-b border-slate-800 pb-6">
+              <h1 className="text-2xl font-bold text-white">日報の確認・フィードバック</h1>
+            </header>
+            <div className="space-y-6 max-w-4xl">
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-indigo-400"><Loader2 className="w-8 h-8 animate-spin mb-4" /><p className="font-bold">データを読み込み中...</p></div>
+              ) : reports.length === 0 ? (
+                <div className="text-center py-20 text-slate-500 border border-dashed border-slate-800 rounded-2xl"><p className="font-bold">まだ提出された日報はありません。</p></div>
+              ) : (
+                reports.map((report) => (
+                  <div key={report.id} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div className="p-5 flex justify-between items-start border-b border-slate-800/50 bg-slate-900/50">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center text-slate-300 font-bold border border-slate-700 text-lg">{report.author.charAt(0)}</div>
+                        <div>
+                          <h3 className="text-base font-bold text-white flex items-center gap-2">{report.author}<span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-normal">{report.role}</span></h3>
+                          <p className="text-xs text-slate-400 mt-1">{report.date}</p>
+                        </div>
+                      </div>
+                      <div>
+                        {report.status === 'pending' && <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>未確認</span>}
+                        {report.status === 'approved' && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />承認済</span>}
+                      </div>
+                    </div>
+                    <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">提出された日報</h4>
+                        <div className="bg-slate-950 rounded-xl p-4 border border-slate-800/80 h-[220px] overflow-y-auto">
+                          <pre className="text-sm text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">{report.fullText}</pre>
+                        </div>
+                      </div>
+                      <div className="flex flex-col">
+                        <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">マネージャーフィードバック</h4>
+                        {report.status === 'pending' ? (
+                          <div className="flex flex-col h-full">
+                            <textarea placeholder="フィードバックを入力..." value={editingFeedback[report.id] !== undefined ? editingFeedback[report.id] : ''} onChange={(e) => handleFeedbackChange(report.id, e.target.value)} className="w-full grow bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition resize-none mb-4" />
+                            <div className="flex gap-2">
+                              <button onClick={() => handleApprove(report.id)} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2"><CheckCircle2 className="w-4 h-4" /> 承認して完了</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-indigo-500/5 border border-indigo-500/10 rounded-xl p-4 h-full flex flex-col">
+                            <p className="text-sm text-indigo-200 leading-relaxed grow">{report.feedback || 'フィードバックなしで処理されました。'}</p>
+                            <button onClick={() => setReports(reports.map(r => r.id === report.id ? { ...r, status: 'pending' } : r))} className="mt-4 text-xs font-bold text-slate-500 hover:text-slate-300 flex items-center gap-1 w-fit"><ArrowRight className="w-3 h-3" /> 再編集する</button>
+                          </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 現在の項目表示 */}
-                <div className="text-center mb-10 w-full">
-                  <h2 className="text-2xl md:text-3xl font-bold text-white leading-relaxed">
-                    「<span className="text-indigo-300 border-b-2 border-indigo-500/30 pb-1">{currentFieldName}</span>」<br />
-                    について
-                  </h2>
-                </div>
-
-                {/* 録音ボタンエリア */}
-                <div className="flex justify-center mb-8 relative">
-                  {step === 'idle' && (
-                    <button onClick={startRecording} className="w-36 h-36 rounded-full bg-indigo-600 text-white flex flex-col items-center justify-center shadow-[0_0_40px_rgba(79,70,229,0.25)] hover:bg-indigo-500 hover:scale-105 transition-all group border-4 border-indigo-500/30">
-                      <Mic className="w-10 h-10 mb-2 group-hover:scale-110 transition-transform" />
-                      <span className="font-bold text-sm tracking-wide">録音開始</span>
-                    </button>
-                  )}
-                  {step === 'recording' && (
-                    <button onClick={stopRecording} className="w-36 h-36 rounded-full bg-red-500 text-white flex flex-col items-center justify-center shadow-[0_0_40px_rgba(239,68,68,0.3)] animate-pulse border-4 border-red-400/30">
-                      <Square className="w-8 h-8 mb-2" />
-                      <span className="font-bold text-sm tracking-wide">停止する</span>
-                    </button>
-                  )}
-                  {step === 'processing' && (
-                    <div className="w-36 h-36 rounded-full bg-slate-800 border-4 border-indigo-500/50 flex flex-col items-center justify-center text-indigo-400 shadow-[0_0_40px_rgba(79,70,229,0.1)]">
-                      <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                      <span className="font-bold text-sm tracking-wide">AI処理中...</span>
                     </div>
-                  )}
-                </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
 
-                {/* スキップボタン */}
-                {step === 'idle' && fields.length > 0 && (
-                  <button 
-                    onClick={handleSkip}
-                    className="flex items-center gap-2 text-slate-500 hover:text-slate-300 text-sm font-bold transition-colors bg-slate-950 px-6 py-2.5 rounded-full border border-slate-800"
-                  >
-                    特にない場合はスキップ <SkipForward className="w-4 h-4" />
-                  </button>
+        {activeTab === 'settings' && (
+          <>
+            <header className="mb-8 border-b border-slate-800 pb-6">
+              <h1 className="text-2xl font-bold text-white">入力項目設定</h1>
+              <p className="text-sm text-slate-400 mt-1">現場スタッフが入力するフォーマット（項目）を自由に定義できます。</p>
+            </header>
+            <div className="max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-6">
+              <div className="flex gap-3 mb-8">
+                <input type="text" value={newFieldName} onChange={(e) => setNewFieldName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddField()} placeholder="新しい項目名（例：業務内容、申し送り事項...）" className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
+                <button onClick={handleAddField} disabled={isAddingField || !newFieldName.trim()} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 transition">{isAddingField ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} 追加</button>
+              </div>
+              <div className="space-y-3">
+                {fields.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700 rounded-xl">項目が登録されていません。<br/>デフォルトではユーザーは自由に発話します。</div>
+                ) : (
+                  fields.map(field => (
+                    <div key={field.id} className="flex items-center justify-between bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <span className="font-bold text-slate-300">{field.name}</span>
+                      <button onClick={() => handleDeleteField(field.id)} className="text-slate-500 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  ))
                 )}
               </div>
-            )}
-
-            {/* 最終確認・編集画面 */}
-            {step === 'editing' && (
-              <div className="flex flex-col animate-in fade-in zoom-in duration-300">
-                <div className="flex items-center gap-2 mb-6 border-b border-slate-800 pb-4">
-                  <AlignLeft className="w-5 h-5 text-indigo-400" />
-                  <h3 className="text-lg font-bold text-white">内容の確認・修正</h3>
-                </div>
-                <textarea
-                  value={reportText}
-                  onChange={(e) => setReportText(e.target.value)}
-                  className="w-full h-64 bg-slate-950 border border-slate-700 rounded-xl p-5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition resize-none leading-relaxed"
-                />
-                <div className="flex flex-col sm:flex-row gap-3 mt-6">
-                  <button onClick={resetAll} className="flex-1 bg-slate-800 text-slate-300 py-3.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition flex items-center justify-center gap-2 border border-slate-700">
-                    <RotateCcw className="w-4 h-4" /> やり直す
-                  </button>
-                  <button onClick={handleSubmit} className="flex-[2] bg-indigo-600 text-white py-3.5 rounded-xl text-sm font-bold hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2">
-                    <Send className="w-4 h-4" /> 送信する
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 送信完了画面 */}
-            {step === 'submitted' && (
-              <div className="flex flex-col items-center py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 border-4 border-emerald-500/20">
-                  <CheckCircle2 className="w-12 h-12 text-emerald-400" />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-3">送信完了！</h3>
-                <p className="text-slate-400 text-sm mb-10 text-center leading-relaxed">
-                  お疲れ様でした。<br/>レポートは正常にデータベースへ記録されました。
-                </p>
-                <button onClick={resetAll} className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white px-8 py-3.5 rounded-xl text-sm font-bold transition flex items-center gap-2">
-                  <RotateCcw className="w-4 h-4 text-slate-400" />
-                  続けて入力する
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+            </div>
+          </>
+        )}
       </main>
     </div>
   )
