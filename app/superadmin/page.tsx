@@ -1,19 +1,15 @@
 // app/superadmin/page.tsx
 'use client'
 
-import { useState } from 'react'
-import { Building2, Search, Activity, Database, ShieldAlert, Users, FileText, Settings, ArrowUpRight } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Building2, Search, Activity, Database, ShieldAlert, Users, FileText, Settings, ArrowUpRight, Lock, KeyRound, Home, LogOut, Download, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { createClient } from '../../lib/supabase/client'
 
-// ※全社横断のダミーデータ
+// ※全社横断のダミーデータ（テナントとユーザー用）
 const allTenants = [
   { id: 'ORG-1001', name: '株式会社 サンプル工務店', plan: 'Business', users: 15, reports: 1240, status: 'Active' },
   { id: 'ORG-1002', name: '佐藤設備', plan: 'Light', users: 3, reports: 45, status: 'Active' },
-]
-
-const allReports = [
-  { id: 1, orgName: 'サンプル工務店', author: '鈴木 一郎', date: '2026-05-31 16:15', summary: 'Aビル配管工事。予定の8割完了。', status: 'pending' },
-  { id: 2, orgName: '佐藤設備', author: '佐藤 健太', date: '2026-05-31 15:30', summary: 'Bテナント内装配線。完了。', status: 'approved' },
-  { id: 3, orgName: 'サンプル工務店', author: '田中 勇気', date: '2026-05-30 18:00', summary: '資材搬入。問題なし。', status: 'approved' },
 ]
 
 const allUsers = [
@@ -22,9 +18,119 @@ const allUsers = [
   { id: 'U-003', orgName: '佐藤設備', name: '佐藤 健太', role: 'テナント管理者', email: 'sato@example.com' },
 ]
 
-export default function SaaSAdminDashboard() {
-  const [activeTab, setActiveTab] = useState<'tenants' | 'reports' | 'users'>('tenants')
+type Report = {
+  id: string
+  type: string
+  status: string
+  created_at: string
+  content: string
+}
 
+export default function SaaSAdminDashboard() {
+  // 認証とデータ取得のState
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [loginError, setLoginError] = useState(false)
+  const [activeTab, setActiveTab] = useState<'tenants' | 'reports' | 'users'>('tenants')
+  
+  const [dbReports, setDbReports] = useState<Report[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const SUPERADMIN_PASSWORD = 'superadmin'
+
+  // ログイン後にSupabaseから本物のデータを取得
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const fetchData = async () => {
+      const supabase = createClient()
+      const { data } = await supabase.from('reports').select('*').order('created_at', { ascending: false })
+      if (data) setDbReports(data)
+      setLoading(false)
+    }
+
+    fetchData()
+  }, [isAuthenticated])
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (passwordInput === SUPERADMIN_PASSWORD) {
+      setIsAuthenticated(true)
+      setLoginError(false)
+    } else {
+      setLoginError(true)
+      setPasswordInput('')
+    }
+  }
+
+  // 全データをCSVでダウンロードする機能
+  const downloadCSV = () => {
+    if (dbReports.length === 0) return alert('データがありません')
+    
+    const headers = ['ID', '日時', '項目名', '内容']
+    const csvContent = [
+      headers.join(','),
+      ...dbReports.map(r => 
+        `"${r.id}","${new Date(r.created_at).toLocaleString('ja-JP')}","${r.type}","${r.content.replace(/"/g, '""').replace(/\n/g, ' ')}"`
+      )
+    ].join('\n')
+
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.setAttribute('href', url)
+    link.setAttribute('download', `system_reports_${new Date().getTime()}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // 未ログイン時の画面（Roseカラーベース）
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-rose-500/30">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-gradient-to-tr from-rose-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-500/20">
+              <ShieldAlert className="w-8 h-8 text-white" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-white text-center mb-2">Master Console</h1>
+          <p className="text-slate-400 text-sm text-center mb-8 leading-relaxed">
+            システム全体管理用のアカウントです。<br/>マスターパスワードを入力してください。
+          </p>
+          
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <div className="relative">
+                <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="マスターパスワード"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"
+                  autoFocus
+                />
+              </div>
+              {loginError && <p className="text-rose-500 text-xs mt-2 font-bold ml-1">パスワードが間違っています。</p>}
+            </div>
+            <button type="submit" className="w-full bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-500 hover:to-orange-400 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20">
+              システムにログイン
+            </button>
+          </form>
+
+          <div className="mt-8 pt-6 border-t border-slate-800 text-center">
+            <Link href="/" className="text-slate-500 hover:text-rose-400 text-sm transition font-bold flex items-center justify-center gap-2">
+              <Home className="w-4 h-4" /> 録音画面に戻る
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ログイン成功後の画面
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       
@@ -55,7 +161,7 @@ export default function SaaSAdminDashboard() {
       <div className="flex flex-1 overflow-hidden">
         
         {/* サイドナビゲーション */}
-        <aside className="w-64 bg-slate-900 border-r border-slate-800 p-4 shrink-0 overflow-y-auto hidden md:block">
+        <aside className="w-64 bg-slate-900 border-r border-slate-800 p-4 shrink-0 overflow-y-auto hidden md:block flex flex-col">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-4 px-2">Master Database</p>
           <nav className="space-y-1">
             <button 
@@ -82,7 +188,7 @@ export default function SaaSAdminDashboard() {
           </nav>
           
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-4 px-2 mt-8">System</p>
-          <nav className="space-y-1">
+          <nav className="space-y-1 mb-8">
             <button className="w-full flex items-center gap-3 text-slate-400 hover:bg-slate-800 px-4 py-3 rounded-xl font-bold text-sm transition">
               <Activity className="w-4 h-4" />
               API稼働ログ・コスト
@@ -92,6 +198,17 @@ export default function SaaSAdminDashboard() {
               システム全体設定
             </button>
           </nav>
+
+          <div className="mt-auto pt-4 border-t border-slate-800 space-y-2">
+            <Link href="/" className="w-full flex items-center gap-3 text-slate-400 hover:text-rose-400 hover:bg-slate-800/50 px-4 py-3 rounded-xl text-sm transition font-bold">
+              <Home className="w-4 h-4" />
+              録音画面に戻る
+            </Link>
+            <button onClick={() => setIsAuthenticated(false)} className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold">
+              <LogOut className="w-4 h-4" />
+              ログアウト
+            </button>
+          </div>
         </aside>
 
         {/* メインコンテンツ */}
@@ -119,9 +236,10 @@ export default function SaaSAdminDashboard() {
               <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl -mr-4 -mt-4 transition-all group-hover:scale-150"></div>
               <div className="flex items-center gap-3 mb-2 relative z-10">
                 <Database className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">総生成日報数</h3>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">実生成日報数</h3>
               </div>
-              <p className="text-3xl font-bold text-white font-mono mt-2">34,592</p>
+              {/* ダミーではなく、本物のデータベースの件数を表示 */}
+              <p className="text-3xl font-bold text-white font-mono mt-2">{loading ? '...' : dbReports.length}</p>
             </div>
           </div>
 
@@ -134,9 +252,16 @@ export default function SaaSAdminDashboard() {
                 {activeTab === 'reports' && <><FileText className="w-5 h-5 text-rose-400"/> 全社横断 日報データ</>}
                 {activeTab === 'users' && <><Users className="w-5 h-5 text-rose-400"/> 全ユーザーマスタ</>}
               </h2>
-              <div className="relative w-full sm:max-w-sm">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type="text" placeholder="横断検索..." className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500" />
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                {activeTab === 'reports' && (
+                  <button onClick={downloadCSV} className="hidden sm:flex bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-xs font-bold items-center gap-2 transition whitespace-nowrap">
+                    <Download className="w-3.5 h-3.5" /> CSVエクスポート
+                  </button>
+                )}
+                <div className="relative w-full sm:max-w-xs">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input type="text" placeholder="横断検索..." className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500" />
+                </div>
               </div>
             </div>
 
@@ -144,7 +269,7 @@ export default function SaaSAdminDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 
-                {/* テナントタブ */}
+                {/* テナントタブ（ダミー） */}
                 {activeTab === 'tenants' && (
                   <>
                     <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
@@ -181,37 +306,51 @@ export default function SaaSAdminDashboard() {
                   </>
                 )}
 
-                {/* レポートタブ */}
+                {/* レポートタブ（本物のデータベース連動） */}
                 {activeTab === 'reports' && (
                   <>
                     <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
                       <tr>
-                        <th className="px-6 py-4 font-bold">所属企業</th>
-                        <th className="px-6 py-4 font-bold">報告者</th>
-                        <th className="px-6 py-4 font-bold">サマリー (AI抽出)</th>
                         <th className="px-6 py-4 font-bold">提出日時</th>
+                        <th className="px-6 py-4 font-bold">報告者</th>
+                        <th className="px-6 py-4 font-bold">項目タイプ</th>
+                        <th className="px-6 py-4 font-bold">AIサマリー</th>
                         <th className="px-6 py-4 text-right font-bold">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {allReports.map(report => (
-                        <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
-                          <td className="px-6 py-4 text-slate-300 font-bold">{report.orgName}</td>
-                          <td className="px-6 py-4 text-slate-400">{report.author}</td>
-                          <td className="px-6 py-4 text-slate-300 truncate max-w-xs">{report.summary}</td>
-                          <td className="px-6 py-4 text-slate-500 text-xs font-mono">{report.date}</td>
-                          <td className="px-6 py-4 text-right">
-                            <button className="text-xs font-bold text-rose-400 hover:text-rose-300 flex items-center gap-1 justify-end w-full">
-                              データ確認 <ArrowUpRight className="w-3 h-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {loading ? (
+                        <tr><td colSpan={5} className="px-6 py-10 text-center text-rose-500"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
+                      ) : dbReports.length === 0 ? (
+                        <tr><td colSpan={5} className="px-6 py-10 text-center text-slate-500">データがありません</td></tr>
+                      ) : (
+                        dbReports.map(report => (
+                          <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-6 py-4 text-slate-400 text-xs font-mono">
+                              {new Date(report.created_at).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="px-6 py-4 text-slate-300 font-bold">ゲストユーザー</td>
+                            <td className="px-6 py-4">
+                              <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-1 rounded text-[10px] font-bold">
+                                {report.type}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-slate-300 truncate max-w-xs">
+                              {report.content.split('\n').find(line => line.trim().length > 0)?.substring(0, 30) || '内容なし'}...
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button className="text-xs font-bold text-rose-400 hover:text-rose-300 flex items-center gap-1 justify-end w-full">
+                                詳細 <ArrowUpRight className="w-3 h-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </>
                 )}
 
-                {/* ユーザータブ */}
+                {/* ユーザータブ（ダミー） */}
                 {activeTab === 'users' && (
                   <>
                     <thead className="bg-slate-950 border-b border-slate-800 text-slate-400 text-xs uppercase tracking-wider">
