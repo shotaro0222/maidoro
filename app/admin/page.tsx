@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home } from 'lucide-react'
+import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home, Lock, KeyRound } from 'lucide-react'
 import { createClient } from '../../lib/supabase/client'
 import Link from 'next/link'
 
@@ -24,6 +24,14 @@ type Field = {
 }
 
 export default function TenantAdminDashboard() {
+  // ▼ 認証用の状態管理を追加
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [loginError, setLoginError] = useState(false)
+  
+  // パスワードの設定
+  const ADMIN_PASSWORD = 'admin'
+
   const [activeTab, setActiveTab] = useState<'reports' | 'settings'>('reports')
   
   // 日報用のState
@@ -38,6 +46,9 @@ export default function TenantAdminDashboard() {
 
   // 起動時にデータを取得
   useEffect(() => {
+    // ▼ ログインしていない時はデータを取得しないように制御
+    if (!isAuthenticated) return;
+
     const fetchData = async () => {
       const supabase = createClient()
       
@@ -77,7 +88,7 @@ export default function TenantAdminDashboard() {
     }
 
     fetchData()
-  }, [])
+  }, [isAuthenticated]) // ▼ 認証状態が変わった時に発火するように変更
 
   // 英語のタイプを日本語に変換
   const getRoleName = (type: string) => {
@@ -139,6 +150,64 @@ export default function TenantAdminDashboard() {
     }
   }
 
+  // ▼ ログイン処理を追加
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (passwordInput === ADMIN_PASSWORD) {
+      setIsAuthenticated(true)
+      setLoginError(false)
+    } else {
+      setLoginError(true)
+      setPasswordInput('')
+    }
+  }
+
+  // ▼ 未ログイン時の画面（元のデザインに合わせたロック画面）
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-indigo-500/30">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center border border-indigo-500/20">
+              <Lock className="w-8 h-8 text-indigo-400" />
+            </div>
+          </div>
+          <h1 className="text-2xl font-bold text-white text-center mb-2">管理者ログイン</h1>
+          <p className="text-slate-400 text-sm text-center mb-8 leading-relaxed">
+            設定やデータを確認するには<br/>パスワードを入力してください。
+          </p>
+          
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <div className="relative">
+                <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="パスワードを入力"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  autoFocus
+                />
+              </div>
+              {loginError && <p className="text-rose-400 text-xs mt-2 font-bold ml-1">パスワードが間違っています。</p>}
+            </div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
+              ログインする
+            </button>
+          </form>
+
+          <div className="mt-8 pt-6 border-t border-slate-800 text-center">
+            <Link href="/" className="text-slate-500 hover:text-indigo-400 text-sm transition font-bold flex items-center justify-center gap-2">
+              <Home className="w-4 h-4" /> 録音画面に戻る
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ▼ 以下は完全に元のコードのままです（ログアウトボタンのonClickだけ追加）
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
       
@@ -173,13 +242,17 @@ export default function TenantAdminDashboard() {
           </nav>
         </div>
 
-        {/* 画面遷移とログアウト（ここが復活しました！） */}
+        {/* 画面遷移とログアウト */}
         <div className="mt-auto p-4 border-t border-slate-800 space-y-2">
           <Link href="/" className="w-full flex items-center gap-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-800/50 px-4 py-3 rounded-xl text-sm transition font-bold">
             <Home className="w-4 h-4" />
             録音画面に戻る
           </Link>
-          <button className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold">
+          {/* ▼ ログアウトボタンにクリックイベントを追加 */}
+          <button 
+            onClick={() => setIsAuthenticated(false)}
+            className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold"
+          >
             <LogOut className="w-4 h-4" />
             ログアウト
           </button>
