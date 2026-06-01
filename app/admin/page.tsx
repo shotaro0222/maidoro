@@ -2,8 +2,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home } from 'lucide-react'
 import { createClient } from '../../lib/supabase/client'
+import Link from 'next/link'
 
 // データの型定義
 type Report = {
@@ -170,6 +171,18 @@ export default function TenantAdminDashboard() {
               入力項目設定
             </button>
           </nav>
+        </div>
+
+        {/* 画面遷移とログアウト（ここが復活しました！） */}
+        <div className="mt-auto p-4 border-t border-slate-800 space-y-2">
+          <Link href="/" className="w-full flex items-center gap-3 text-slate-400 hover:text-indigo-400 hover:bg-slate-800/50 px-4 py-3 rounded-xl text-sm transition font-bold">
+            <Home className="w-4 h-4" />
+            録音画面に戻る
+          </Link>
+          <button className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold">
+            <LogOut className="w-4 h-4" />
+            ログアウト
+          </button>
         </div>
       </aside>
 
