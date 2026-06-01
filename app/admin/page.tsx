@@ -2,7 +2,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, Mic, Users, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight } from 'lucide-react'
+import { Mic, Users, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight } from 'lucide-react'
 
 // ※UI動作用のダミーデータ（ステータスを追加）
 const initialReports = [
