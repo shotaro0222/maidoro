@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Building2, Search, Activity, Database, ShieldAlert, Users, FileText, Settings, ArrowUpRight, Lock, KeyRound, Home, LogOut, Download, Loader2 } from 'lucide-react'
+import { Building2, Search, Activity, Database, ShieldAlert, Users, FileText, Settings, ArrowUpRight, Lock, KeyRound, Home, LogOut, Download, Loader2, User } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '../../lib/supabase/client'
 
@@ -25,19 +25,20 @@ type Report = {
   status: string
   created_at: string
   content: string
+  author: string // ▼ 報告者の型を追加
 }
 
 export default function SaaSAdminDashboard() {
-  // ▼ 認証とデータ取得のState
+  // ▼ 認証とデータ取得のState（DB認証用にログインIDとローディング状態を追加）
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loginId, setLoginId] = useState('')
   const [passwordInput, setPasswordInput] = useState('')
   const [loginError, setLoginError] = useState(false)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [activeTab, setActiveTab] = useState<'tenants' | 'reports' | 'users'>('tenants')
   
   const [dbReports, setDbReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
-
-  const SUPERADMIN_PASSWORD = 'superadmin'
 
   // ▼ ログイン後にSupabaseから本物のデータを取得
   useEffect(() => {
@@ -53,27 +54,43 @@ export default function SaaSAdminDashboard() {
     fetchData()
   }, [isAuthenticated])
 
-  // ▼ ログイン処理
-  const handleLogin = (e: React.FormEvent) => {
+  // ▼ DBと通信してログイン照合する処理
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (passwordInput === SUPERADMIN_PASSWORD) {
+    if (!loginId || !passwordInput) return
+    
+    setIsAuthenticating(true)
+    setLoginError(false)
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('login_id', loginId)
+      .eq('password', passwordInput)
+      .eq('role', 'superadmin') // ▼ superadmin権限かどうかもチェック
+      .single()
+
+    if (data && !error) {
       setIsAuthenticated(true)
       setLoginError(false)
     } else {
       setLoginError(true)
-      setPasswordInput('')
+      setPasswordInput('') // パスワードだけリセット
     }
+    
+    setIsAuthenticating(false)
   }
 
-  // ▼ 全データをCSVでダウンロードする機能
+  // ▼ 全データをCSVでダウンロードする機能（報告者の列を追加）
   const downloadCSV = () => {
     if (dbReports.length === 0) return alert('データがありません')
     
-    const headers = ['ID', '日時', '項目名', '内容']
+    const headers = ['ID', '日時', '報告者', '項目名', '内容']
     const csvContent = [
       headers.join(','),
       ...dbReports.map(r => 
-        `"${r.id}","${new Date(r.created_at).toLocaleString('ja-JP')}","${r.type}","${r.content.replace(/"/g, '""').replace(/\n/g, ' ')}"`
+        `"${r.id}","${new Date(r.created_at).toLocaleString('ja-JP')}","${r.author || '名無しスタッフ'}","${r.type}","${r.content.replace(/"/g, '""').replace(/\n/g, ' ')}"`
       )
     ].join('\n')
 
@@ -87,7 +104,7 @@ export default function SaaSAdminDashboard() {
     document.body.removeChild(link)
   }
 
-  // ▼ 未ログイン時の画面（Roseカラーベースのロック画面）
+  // ▼ 未ログイン時の画面（Roseカラーベースのロック画面 + DB認証用フォーム）
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-rose-500/30">
@@ -99,10 +116,24 @@ export default function SaaSAdminDashboard() {
           </div>
           <h1 className="text-2xl font-bold text-white text-center mb-2">Master Console</h1>
           <p className="text-slate-400 text-sm text-center mb-8 leading-relaxed">
-            システム全体管理用のアカウントです。<br/>マスターパスワードを入力してください。
+            システム全体管理用のアカウントです。<br/>発行されたIDとパスワードを入力してください。
           </p>
           
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="text"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  placeholder="ログインID"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"
+                  autoFocus
+                  disabled={isAuthenticating}
+                />
+              </div>
+            </div>
             <div>
               <div className="relative">
                 <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
@@ -110,15 +141,19 @@ export default function SaaSAdminDashboard() {
                   type="password"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="マスターパスワード"
+                  placeholder="パスワード"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition"
-                  autoFocus
+                  disabled={isAuthenticating}
                 />
               </div>
-              {loginError && <p className="text-rose-500 text-xs mt-2 font-bold ml-1">パスワードが間違っています。</p>}
+              {loginError && <p className="text-rose-500 text-xs mt-2 font-bold ml-1">IDまたはパスワードが間違っています。</p>}
             </div>
-            <button type="submit" className="w-full bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-500 hover:to-orange-400 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20">
-              システムにログイン
+            <button 
+              type="submit" 
+              disabled={isAuthenticating || !loginId || !passwordInput}
+              className="w-full bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-500 hover:to-orange-400 disabled:opacity-50 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-rose-500/20"
+            >
+              {isAuthenticating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'システムにログイン'}
             </button>
           </form>
 
@@ -207,7 +242,10 @@ export default function SaaSAdminDashboard() {
               <Home className="w-4 h-4" />
               録音画面に戻る
             </Link>
-            <button onClick={() => setIsAuthenticated(false)} className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold">
+            <button 
+              onClick={() => {setIsAuthenticated(false); setLoginId(''); setPasswordInput('');}} 
+              className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold"
+            >
               <LogOut className="w-4 h-4" />
               ログアウト
             </button>
@@ -241,7 +279,6 @@ export default function SaaSAdminDashboard() {
                 <Database className="w-5 h-5 text-emerald-400" />
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">実生成日報数</h3>
               </div>
-              {/* ▼ ダミーではなく、本物のデータベースの件数を表示 */}
               <p className="text-3xl font-bold text-white font-mono mt-2">{loading ? '...' : dbReports.length}</p>
             </div>
           </div>
@@ -256,7 +293,6 @@ export default function SaaSAdminDashboard() {
                 {activeTab === 'users' && <><Users className="w-5 h-5 text-rose-400"/> 全ユーザーマスタ</>}
               </h2>
               <div className="flex items-center gap-3 w-full sm:w-auto">
-                {/* ▼ レポートタブの時だけCSVダウンロードボタンを表示 */}
                 {activeTab === 'reports' && (
                   <button onClick={downloadCSV} className="hidden sm:flex bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-xs font-bold items-center gap-2 transition whitespace-nowrap shadow-lg shadow-rose-500/20">
                     <Download className="w-3.5 h-3.5" /> CSV出力
@@ -333,7 +369,8 @@ export default function SaaSAdminDashboard() {
                             <td className="px-6 py-4 text-slate-400 text-xs font-mono">
                               {new Date(report.created_at).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </td>
-                            <td className="px-6 py-4 text-slate-300 font-bold">ゲストユーザー</td>
+                            {/* ▼ ここで本物の名前が表示されます */}
+                            <td className="px-6 py-4 text-slate-300 font-bold">{report.author || '名無しスタッフ'}</td>
                             <td className="px-6 py-4">
                               <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-1 rounded text-[10px] font-bold">
                                 {report.type}

@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home, Lock, KeyRound } from 'lucide-react'
+import { Mic, Settings, LogOut, CheckCircle2, MessageSquareWarning, ArrowRight, Loader2, Plus, Trash2, Home, Lock, KeyRound, User } from 'lucide-react'
 import { createClient } from '../../lib/supabase/client'
 import Link from 'next/link'
 
@@ -24,13 +24,12 @@ type Field = {
 }
 
 export default function TenantAdminDashboard() {
-  // ▼ 認証用の状態管理を追加
+  // ▼ DB認証用の状態管理
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loginId, setLoginId] = useState('')
   const [passwordInput, setPasswordInput] = useState('')
   const [loginError, setLoginError] = useState(false)
-  
-  // パスワードの設定
-  const ADMIN_PASSWORD = 'admin'
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
 
   const [activeTab, setActiveTab] = useState<'reports' | 'settings'>('reports')
   
@@ -61,7 +60,8 @@ export default function TenantAdminDashboard() {
       if (reportsData) {
         const formattedData: Report[] = reportsData.map((row: any) => ({
           id: row.id,
-          author: 'ゲストユーザー',
+          // ▼ DBのauthorを表示（無ければ「名無しスタッフ」）
+          author: row.author || '名無しスタッフ',
           role: getRoleName(row.type),
           date: new Date(row.created_at).toLocaleString('ja-JP', {
             year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
@@ -88,7 +88,7 @@ export default function TenantAdminDashboard() {
     }
 
     fetchData()
-  }, [isAuthenticated]) // ▼ 認証状態が変わった時に発火するように変更
+  }, [isAuthenticated])
 
   // 英語のタイプを日本語に変換
   const getRoleName = (type: string) => {
@@ -150,19 +150,35 @@ export default function TenantAdminDashboard() {
     }
   }
 
-  // ▼ ログイン処理を追加
-  const handleLogin = (e: React.FormEvent) => {
+  // ▼ DBと通信してログイン照合する処理
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (passwordInput === ADMIN_PASSWORD) {
+    if (!loginId || !passwordInput) return
+    
+    setIsAuthenticating(true)
+    setLoginError(false)
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('login_id', loginId)
+      .eq('password', passwordInput)
+      .eq('role', 'admin') // admin権限かどうかもチェック
+      .single()
+
+    if (data && !error) {
       setIsAuthenticated(true)
       setLoginError(false)
     } else {
       setLoginError(true)
-      setPasswordInput('')
+      setPasswordInput('') // パスワードだけリセット
     }
+    
+    setIsAuthenticating(false)
   }
 
-  // ▼ 未ログイン時の画面（元のデザインに合わせたロック画面）
+  // ▼ 未ログイン時の画面（DB認証用フォーム）
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-indigo-500/30">
@@ -174,10 +190,24 @@ export default function TenantAdminDashboard() {
           </div>
           <h1 className="text-2xl font-bold text-white text-center mb-2">管理者ログイン</h1>
           <p className="text-slate-400 text-sm text-center mb-8 leading-relaxed">
-            設定やデータを確認するには<br/>パスワードを入力してください。
+            設定やデータを確認するには<br/>発行されたIDとパスワードを入力してください。
           </p>
           
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
+                <input
+                  type="text"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  placeholder="ログインID"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  autoFocus
+                  disabled={isAuthenticating}
+                />
+              </div>
+            </div>
             <div>
               <div className="relative">
                 <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
@@ -185,15 +215,19 @@ export default function TenantAdminDashboard() {
                   type="password"
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="パスワードを入力"
+                  placeholder="パスワード"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3.5 pl-12 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                  autoFocus
+                  disabled={isAuthenticating}
                 />
               </div>
-              {loginError && <p className="text-rose-400 text-xs mt-2 font-bold ml-1">パスワードが間違っています。</p>}
+              {loginError && <p className="text-rose-400 text-xs mt-2 font-bold ml-1">IDまたはパスワードが間違っています。</p>}
             </div>
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
-              ログインする
+            <button 
+              type="submit" 
+              disabled={isAuthenticating || !loginId || !passwordInput}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 mt-2"
+            >
+              {isAuthenticating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'ログインする'}
             </button>
           </form>
 
@@ -207,7 +241,7 @@ export default function TenantAdminDashboard() {
     )
   }
 
-  // ▼ 以下は完全に元のコードのままです（ログアウトボタンのonClickだけ追加）
+  // ▼ 以下はログイン成功後のUI
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
       
@@ -248,9 +282,8 @@ export default function TenantAdminDashboard() {
             <Home className="w-4 h-4" />
             録音画面に戻る
           </Link>
-          {/* ▼ ログアウトボタンにクリックイベントを追加 */}
           <button 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => { setIsAuthenticated(false); setLoginId(''); setPasswordInput(''); }}
             className="w-full flex items-center gap-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 px-4 py-3 rounded-xl text-sm transition font-bold"
           >
             <LogOut className="w-4 h-4" />
